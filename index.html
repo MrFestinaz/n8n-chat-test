@@ -23,7 +23,25 @@
 
     createChat({
       webhookUrl: "https://jakework.app.n8n.cloud/webhook/4091fa09-fb9a-4039-9411-7104d213f601/chat",
-      mode: "fullscreen"
+      mode: "fullscreen",
+
+      allowFileUploads: true,
+      allowedFilesMimeTypes: "image/*,application/pdf",
+
+      showWelcomeScreen: true,
+      initialMessages: [
+        "Hej!",
+        "Jeg er Ejner Hessel Lastbil Rapport-agenten. Hvad vil du gerne undersøge?"
+      ],
+
+      i18n: {
+        en: {
+          title: "Ejner Hessel – Lastbil Rapport",
+          subtitle: "Upload evt. en PDF eller et billede",
+          inputPlaceholder: "Skriv dit spørgsmål…",
+          getStarted: "Ny samtale"
+        }
+      }
     });
   </script>
 </body>
