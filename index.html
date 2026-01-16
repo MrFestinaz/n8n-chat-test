@@ -2,215 +2,47 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Ejner Hessel – Lastbil Rapport</title>
+  <title>n8n Chat Test</title>
   <link href="https://cdn.jsdelivr.net/npm/@n8n/chat/dist/style.css" rel="stylesheet" />
   <style>
-    html, body { margin: 0; padding: 0; height: 100%; }
-    #n8n-chat { height: 100%; }
-
-    #recorder-bar{
-      position: fixed;
-      bottom: 16px;
-      left: 16px;
-      z-index: 9999;
-      display: flex;
-      gap: 8px;
-      align-items: center;
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
     }
-    #recBtn{
-      padding: 10px 12px;
-      border-radius: 10px;
-      border: 1px solid #ccc;
-      background: #fff;
-      cursor: pointer;
-      font-family: system-ui, Segoe UI, Arial, sans-serif;
-      font-size: 14px;
-      white-space: nowrap;
-    }
-    #recStatus{
-      font-family: system-ui, Segoe UI, Arial, sans-serif;
-      font-size: 14px;
-      background: rgba(255,255,255,0.9);
-      padding: 6px 10px;
-      border-radius: 10px;
-      border: 1px solid #eee;
-      max-width: min(900px, calc(100vw - 160px));
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+    #n8n-chat {
+      height: 100%;
     }
   </style>
 </head>
-
 <body>
   <div id="n8n-chat"></div>
-
-  <div id="recorder-bar">
-    <button id="recBtn">Record</button>
-    <span id="recStatus"></span>
-  </div>
 
   <script type="module">
     import { createChat } from "https://cdn.jsdelivr.net/npm/@n8n/chat/dist/chat.bundle.es.js";
 
-    const WEBHOOK_URL = "https://jakework.app.n8n.cloud/webhook/4091fa09-fb9a-4039-9411-7104d213f601/chat";
-    const CHAT_INPUT_KEY = "chatInput";
-    const CHAT_SESSION_KEY = "sessionId";
-
-    // Session id (same as you had)
-    const SESSION_ID_STORAGE_KEY = "eh_sessionId";
-    function getOrCreateSessionId() {
-      const existing = localStorage.getItem(SESSION_ID_STORAGE_KEY);
-      if (existing) return existing;
-      const fresh = crypto.randomUUID();
-      localStorage.setItem(SESSION_ID_STORAGE_KEY, fresh);
-      return fresh;
-    }
-
     createChat({
-      webhookUrl: WEBHOOK_URL,
-      target: "#n8n-chat",
+      webhookUrl: "https://jakework.app.n8n.cloud/webhook/4091fa09-fb9a-4039-9411-7104d213f601/chat",
       mode: "fullscreen",
-      loadPreviousSession: true,
+
+      allowFileUploads: true,
+      allowedFilesMimeTypes: "audio/*",
+
       showWelcomeScreen: true,
       initialMessages: [
         "Hej!",
-        "Jeg er Ejner Hessel Lastbil Rapport-agenten. Skriv kundenavn og hvad du har lavet, eller optag via knappen så laver vi en rapport sammen!"
-      ]
-    });
+        "Jeg er Ejner Hessel Lastbil Rapport-agenten. Skriv din kundeklage eller tilføj en lydfil, så laver vi en rapport sammen!"
+      ],
 
-    // Try to append a message bubble into the chat UI.
-    // If the chat DOM changes, we fall back to showing it in recStatus.
-    function appendAssistantToChat(text) {
-      // Best-effort: find a scrollable messages container
-      const candidates = [
-        document.querySelector('#n8n-chat [data-testid="chat-messages"]'),
-        document.querySelector('#n8n-chat .messages'),
-        document.querySelector('#n8n-chat .n8n-chat__messages'),
-        document.querySelector('#n8n-chat main'),
-        document.querySelector('#n8n-chat')
-      ].filter(Boolean);
-
-      const container = candidates[0];
-      if (!container) return false;
-
-      const wrap = document.createElement("div");
-      wrap.style.margin = "12px 0";
-      wrap.style.display = "flex";
-      wrap.style.justifyContent = "flex-start";
-
-      const bubble = document.createElement("div");
-      bubble.style.maxWidth = "75%";
-      bubble.style.whiteSpace = "pre-wrap";
-      bubble.style.padding = "10px 12px";
-      bubble.style.borderRadius = "12px";
-      bubble.style.border = "1px solid rgba(0,0,0,0.08)";
-      bubble.style.background = "white";
-      bubble.style.boxShadow = "0 1px 3px rgba(0,0,0,0.06)";
-      bubble.textContent = text;
-
-      wrap.appendChild(bubble);
-      container.appendChild(wrap);
-
-      // Scroll to bottom if possible
-      try { container.scrollTop = container.scrollHeight; } catch {}
-      return true;
-    }
-
-    async function readN8nReply(res) {
-      const ct = (res.headers.get("content-type") || "").toLowerCase();
-      if (ct.includes("application/json")) {
-        const j = await res.json().catch(() => ({}));
-        // Try common fields
-        return (
-          j.output ||
-          j.text ||
-          j.message ||
-          j.data?.output ||
-          j.data?.text ||
-          JSON.stringify(j)
-        );
-      }
-      return await res.text();
-    }
-
-    const recBtn = document.getElementById("recBtn");
-    const recStatus = document.getElementById("recStatus");
-
-    let mediaRecorder = null;
-    let chunks = [];
-
-    async function startRecording() {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      chunks = [];
-
-      const options = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-        ? { mimeType: "audio/webm;codecs=opus" }
-        : undefined;
-
-      mediaRecorder = new MediaRecorder(stream, options);
-
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) chunks.push(e.data);
-      };
-
-      mediaRecorder.onstop = async () => {
-        stream.getTracks().forEach(t => t.stop());
-
-        const blob = new Blob(chunks, { type: mediaRecorder.mimeType || "audio/webm" });
-        const filename = `recording-${Date.now()}.webm`;
-
-        recStatus.textContent = "Uploading…";
-
-        const form = new FormData();
-        form.append("action", "sendMessage");
-        form.append(CHAT_INPUT_KEY, "__AUDIO_RECORDING__");      // <-- matches your IF condition
-        form.append(CHAT_SESSION_KEY, getOrCreateSessionId());
-        form.append("file", blob, filename);
-
-        const res = await fetch(WEBHOOK_URL, { method: "POST", body: form });
-
-        if (!res.ok) {
-          recStatus.textContent = `Upload failed (${res.status})`;
-          return;
+      i18n: {
+        en: {
+          title: "Ejner Hessel – Lastbil Rapport Agent",
+          subtitle: "",
+          inputPlaceholder: "Skriv dit spørgsmål…",
+          getStarted: "Ny samtale"
         }
-
-        const replyText = await readN8nReply(res);
-        recStatus.textContent = "";
-
-        // Try to display inside chat; if DOM doesn't match, show it in the status bar
-        const rendered = appendAssistantToChat(replyText);
-        if (!rendered) {
-          recStatus.textContent = replyText;
-        }
-      };
-
-      mediaRecorder.start();
-      recBtn.textContent = "Stop";
-      recStatus.textContent = "Recording…";
-    }
-
-    function stopRecording() {
-      if (mediaRecorder && mediaRecorder.state !== "inactive") {
-        mediaRecorder.stop();
-      }
-      recBtn.textContent = "Record";
-    }
-
-    recBtn.addEventListener("click", async () => {
-      try {
-        if (!mediaRecorder || mediaRecorder.state === "inactive") {
-          await startRecording();
-        } else {
-          stopRecording();
-        }
-      } catch (err) {
-        recStatus.textContent = "Mic permission denied / not available";
-        console.error(err);
       }
     });
   </script>
 </body>
 </html>
-
-
