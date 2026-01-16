@@ -50,15 +50,35 @@
   <script type="module">
     import { createChat } from "https://cdn.jsdelivr.net/npm/@n8n/chat/dist/chat.bundle.es.js";
 
-    // ✅ Your n8n Chat Trigger (production) webhook
+    // Your n8n Chat Trigger (production) webhook
     const WEBHOOK_URL = "https://jakework.app.n8n.cloud/webhook/4091fa09-fb9a-4039-9411-7104d213f601/chat";
+
+    // Force stable key names (so we know exactly what the workflow expects)
+    const CHAT_INPUT_KEY = "chatInput";
+    const CHAT_SESSION_KEY = "sessionId";
+
+    // Create/reuse a per-user sessionId (stored in THIS browser only)
+    // This keeps multiple people separate automatically.
+    const SESSION_ID_STORAGE_KEY = "eh_sessionId";
+    function getOrCreateSessionId() {
+      const existing = localStorage.getItem(SESSION_ID_STORAGE_KEY);
+      if (existing) return existing;
+      const fresh = crypto.randomUUID();
+      localStorage.setItem(SESSION_ID_STORAGE_KEY, fresh);
+      return fresh;
+    }
 
     // ----- Chat widget -----
     createChat({
       webhookUrl: WEBHOOK_URL,
       mode: "fullscreen",
 
-      // file uploads from the chat UI (you already tested this)
+      // make sure widget uses the same keys
+      chatInputKey: CHAT_INPUT_KEY,
+      chatSessionKey: CHAT_SESSION_KEY,
+      loadPreviousSession: true,
+
+      // file uploads from the chat UI
       allowFileUploads: true,
       allowedFilesMimeTypes: "audio/*",
 
@@ -66,7 +86,7 @@
       showWelcomeScreen: true,
       initialMessages: [
         "Hej!",
-        "Jeg er Ejner Hessel Lastbil Rapport-agenten. Skriv kundeklan og hvad du har lavet, eller optage via knappen så lave vi en rapprot samme!"
+        "Jeg er Ejner Hessel Lastbil Rapport-agenten. Skriv kundenavn og hvad du har lavet, eller optag via knappen så laver vi en rapport sammen!"
       ],
       i18n: {
         en: {
@@ -109,10 +129,16 @@
         recStatus.textContent = "Uploading…";
 
         const form = new FormData();
-        // These match @n8n/chat defaults:
         form.append("action", "sendMessage");
-        form.append("chatInput", "Please transcribe this recording.");
-        // NOTE: sessionId is optional — leaving it out avoids key-mismatch headaches.
+
+        // Send a minimal message so the workflow triggers (no need to type ".")
+        form.append(CHAT_INPUT_KEY, ".");
+
+        // IMPORTANT: Provide sessionId so Simple Memory doesn't crash
+        form.append(CHAT_SESSION_KEY, getOrCreateSessionId());
+
+        // File field name: keep "file" since your normal upload worked.
+        // If you ever see another 500, switch this to "files".
         form.append("file", blob, filename);
 
         const res = await fetch(WEBHOOK_URL, { method: "POST", body: form });
