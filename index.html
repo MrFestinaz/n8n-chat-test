@@ -8,8 +8,7 @@
     html, body { margin: 0; padding: 0; height: 100%; }
     #n8n-chat { height: 100%; }
 
-    /* Small floating recorder bar */
-    #recorder-bar{
+    #recorder-bar {
       position: fixed;
       bottom: 16px;
       left: 16px;
@@ -18,18 +17,15 @@
       gap: 8px;
       align-items: center;
     }
-    #recBtn{
+    #recBtn {
       padding: 10px 12px;
       border-radius: 10px;
       border: 1px solid #ccc;
       background: #fff;
       cursor: pointer;
-      font-family: system-ui, Segoe UI, Arial, sans-serif;
       font-size: 14px;
-      white-space: nowrap;
     }
-    #recStatus{
-      font-family: system-ui, Segoe UI, Arial, sans-serif;
+    #recStatus {
       font-size: 14px;
       background: rgba(255,255,255,0.9);
       padding: 6px 10px;
@@ -46,7 +42,6 @@
 <body>
   <div id="n8n-chat"></div>
 
-  <!-- Recorder button -->
   <div id="recorder-bar">
     <button id="recBtn">Record</button>
     <span id="recStatus"></span>
@@ -55,100 +50,78 @@
   <script type="module">
     import { createChat } from "https://cdn.jsdelivr.net/npm/@n8n/chat/dist/chat.bundle.es.js";
 
-    // Your n8n Chat Trigger (production) webhook
-    const WEBHOOK_URL = "https://jakework.app.n8n.cloud/webhook/4091fa09-fb9a-4039-9411-7104d213f601/chat";
+    const WEBHOOK_URL =
+      "https://jakework.app.n8n.cloud/webhook/4091fa09-fb9a-4039-9411-7104d213f601/chat";
 
-    // Force stable key names (so we know exactly what the workflow expects)
-    const CHAT_INPUT_KEY = "chatInput";
-    const CHAT_SESSION_KEY = "sessionId";
-
-    // Create/reuse a per-user sessionId (stored in THIS browser only)
-    // This keeps multiple people separate automatically.
-    const SESSION_ID_STORAGE_KEY = "eh_sessionId";
-    function getOrCreateSessionId() {
-      const existing = localStorage.getItem(SESSION_ID_STORAGE_KEY);
-      if (existing) return existing;
-      const fresh = crypto.randomUUID();
-      localStorage.setItem(SESSION_ID_STORAGE_KEY, fresh);
-      return fresh;
-    }
-
-    // ----- Chat widget -----
     createChat({
       webhookUrl: WEBHOOK_URL,
       mode: "fullscreen",
-
-      // make sure widget uses the same keys
-      chatInputKey: CHAT_INPUT_KEY,
-      chatSessionKey: CHAT_SESSION_KEY,
-      loadPreviousSession: true,
-
-      // file uploads from the chat UI
       allowFileUploads: true,
       allowedFilesMimeTypes: "audio/*",
-
-      // UI text
+      loadPreviousSession: true,
       showWelcomeScreen: true,
       initialMessages: [
         "Hej!",
-        "Jeg er Ejner Hessel Lastbil Rapport-agenten. Skriv kundenavn og hvad du har lavet, eller optag via knappen så laver vi en rapport sammen!"
-      ],
-      i18n: {
-        en: {
-          title: "Ejner Hessel – Lastbil Rapport",
-          subtitle: "",
-          footer: "",
-          getStarted: "Ny samtale",
-          inputPlaceholder: "Skriv dit spørgsmål…"
-        }
-      }
+        "Jeg er Ejner Hessel Lastbil Rapport-agenten. Du kan skrive eller optage."
+      ]
     });
 
-    // ----- Audio recorder -> injects into the chat widget upload input -----
     const recBtn = document.getElementById("recBtn");
     const recStatus = document.getElementById("recStatus");
 
-    let mediaRecorder = null;
+    let mediaRecorder;
     let chunks = [];
 
     async function startRecording() {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       chunks = [];
 
-      const options = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-        ? { mimeType: "audio/webm;codecs=opus" }
-        : undefined;
-
-      mediaRecorder = new MediaRecorder(stream, options);
-
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) chunks.push(e.data);
+      mediaRecorder = new MediaRecorder(stream);
+      mediaRecorder.ondataavailable = e => {
+        if (e.data.size > 0) chunks.push(e.data);
       };
 
       mediaRecorder.onstop = async () => {
-        // Stop mic
         stream.getTracks().forEach(t => t.stop());
 
-        const blob = new Blob(chunks, { type: mediaRecorder.mimeType || "audio/webm" });
-        const filename = `recording-${Date.now()}.webm`;
+        const blob = new Blob(chunks, { type: "audio/webm" });
+        const file = new File([blob], `recording-${Date.now()}.webm`, {
+          type: "audio/webm"
+        });
 
-        recStatus.textContent = "Sending…";
+        recStatus.textContent = "Uploading audio…";
 
-        // Find the widget's file input (created when allowFileUploads=true)
-        const fileInput = document.querySelector('#n8n-chat input[type="file"]');
+        /* 1) Upload file THROUGH the widget */
+        const fileInput = document.querySelector("#n8n-chat input[type=file]");
         if (!fileInput) {
-          recStatus.textContent = "Could not find chat upload input";
+          recStatus.textContent = "Chat upload input not found";
           return;
         }
 
-        // Put the Blob into a File and “select” it
-        const file = new File([blob], filename, { type: blob.type });
         const dt = new DataTransfer();
         dt.items.add(file);
         fileInput.files = dt.files;
-
-        // Trigger the widget's upload handler
         fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+
+        /* 2) Wait so upload attaches to session */
+        await new Promise(r => setTimeout(r, 1500));
+
+        /* 3) Send marker message */
+        const textarea = document.querySelector("#n8n-chat textarea");
+        if (!textarea) {
+          recStatus.textContent = "Chat input not found";
+          return;
+        }
+
+        textarea.value = "__AUDIO_RECORDING__";
+        textarea.dispatchEvent(new Event("input", { bubbles: true }));
+        textarea.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: "Enter",
+            code: "Enter",
+            bubbles: true
+          })
+        );
 
         recStatus.textContent = "";
       };
@@ -159,24 +132,18 @@
     }
 
     function stopRecording() {
-      if (mediaRecorder && mediaRecorder.state !== "inactive") {
-        mediaRecorder.stop();
-      }
+      mediaRecorder.stop();
       recBtn.textContent = "Record";
     }
 
-    recBtn.addEventListener("click", async () => {
-      try {
-        if (!mediaRecorder || mediaRecorder.state === "inactive") {
-          await startRecording();
-        } else {
-          stopRecording();
-        }
-      } catch (err) {
-        recStatus.textContent = "Mic permission denied / not available";
-        console.error(err);
+    recBtn.onclick = async () => {
+      if (!mediaRecorder || mediaRecorder.state === "inactive") {
+        await startRecording();
+      } else {
+        stopRecording();
       }
-    });
+    };
   </script>
 </body>
 </html>
+
