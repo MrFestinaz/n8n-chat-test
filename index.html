@@ -8,7 +8,6 @@
     html, body { margin: 0; padding: 0; height: 100%; }
     #n8n-chat { height: 100%; }
 
-    /* Small floating recorder bar */
     #recorder-bar{
       position: fixed;
       bottom: 16px;
@@ -55,30 +54,85 @@
     import { createChat } from "https://cdn.jsdelivr.net/npm/@n8n/chat/dist/chat.bundle.es.js";
 
     const WEBHOOK_URL = "https://jakework.app.n8n.cloud/webhook/4091fa09-fb9a-4039-9411-7104d213f601/chat";
+    const CHAT_INPUT_KEY = "chatInput";
+    const CHAT_SESSION_KEY = "sessionId";
 
-    // Init chat (explicit target helps some builds)
+    // Session id (same as you had)
+    const SESSION_ID_STORAGE_KEY = "eh_sessionId";
+    function getOrCreateSessionId() {
+      const existing = localStorage.getItem(SESSION_ID_STORAGE_KEY);
+      if (existing) return existing;
+      const fresh = crypto.randomUUID();
+      localStorage.setItem(SESSION_ID_STORAGE_KEY, fresh);
+      return fresh;
+    }
+
     createChat({
       webhookUrl: WEBHOOK_URL,
       target: "#n8n-chat",
       mode: "fullscreen",
-      allowFileUploads: true,
-      allowedFilesMimeTypes: "audio/*",
       loadPreviousSession: true,
       showWelcomeScreen: true,
       initialMessages: [
         "Hej!",
         "Jeg er Ejner Hessel Lastbil Rapport-agenten. Skriv kundenavn og hvad du har lavet, eller optag via knappen så laver vi en rapport sammen!"
-      ],
-      i18n: {
-        en: {
-          title: "Ejner Hessel – Lastbil Rapport",
-          subtitle: "",
-          footer: "",
-          getStarted: "Ny samtale",
-          inputPlaceholder: "Skriv dit spørgsmål…"
-        }
-      }
+      ]
     });
+
+    // Try to append a message bubble into the chat UI.
+    // If the chat DOM changes, we fall back to showing it in recStatus.
+    function appendAssistantToChat(text) {
+      // Best-effort: find a scrollable messages container
+      const candidates = [
+        document.querySelector('#n8n-chat [data-testid="chat-messages"]'),
+        document.querySelector('#n8n-chat .messages'),
+        document.querySelector('#n8n-chat .n8n-chat__messages'),
+        document.querySelector('#n8n-chat main'),
+        document.querySelector('#n8n-chat')
+      ].filter(Boolean);
+
+      const container = candidates[0];
+      if (!container) return false;
+
+      const wrap = document.createElement("div");
+      wrap.style.margin = "12px 0";
+      wrap.style.display = "flex";
+      wrap.style.justifyContent = "flex-start";
+
+      const bubble = document.createElement("div");
+      bubble.style.maxWidth = "75%";
+      bubble.style.whiteSpace = "pre-wrap";
+      bubble.style.padding = "10px 12px";
+      bubble.style.borderRadius = "12px";
+      bubble.style.border = "1px solid rgba(0,0,0,0.08)";
+      bubble.style.background = "white";
+      bubble.style.boxShadow = "0 1px 3px rgba(0,0,0,0.06)";
+      bubble.textContent = text;
+
+      wrap.appendChild(bubble);
+      container.appendChild(wrap);
+
+      // Scroll to bottom if possible
+      try { container.scrollTop = container.scrollHeight; } catch {}
+      return true;
+    }
+
+    async function readN8nReply(res) {
+      const ct = (res.headers.get("content-type") || "").toLowerCase();
+      if (ct.includes("application/json")) {
+        const j = await res.json().catch(() => ({}));
+        // Try common fields
+        return (
+          j.output ||
+          j.text ||
+          j.message ||
+          j.data?.output ||
+          j.data?.text ||
+          JSON.stringify(j)
+        );
+      }
+      return await res.text();
+    }
 
     const recBtn = document.getElementById("recBtn");
     const recStatus = document.getElementById("recStatus");
@@ -86,38 +140,6 @@
     let mediaRecorder = null;
     let chunks = [];
 
-    // ---- helpers: wait until widget DOM exists ----
-    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-
-    async function waitForChatTextarea(timeoutMs = 8000) {
-      const start = Date.now();
-      while (Date.now() - start < timeoutMs) {
-        const ta = document.querySelector("textarea");
-        if (ta) return ta;
-        await sleep(100);
-      }
-      return null;
-    }
-
-    async function waitForChatFileInput(timeoutMs = 8000) {
-      const start = Date.now();
-      while (Date.now() - start < timeoutMs) {
-        // Some builds put the input inside #n8n-chat, others elsewhere.
-        const inputs = Array.from(document.querySelectorAll('input[type="file"]'));
-
-        // Prefer one that looks like the chat's uploader (accept includes audio, or accept is empty when allowed list is handled differently)
-        const best =
-          inputs.find(i => (i.accept || "").includes("audio")) ||
-          inputs.find(i => (i.accept || "").includes("*")) ||
-          inputs[0];
-
-        if (best) return best;
-        await sleep(100);
-      }
-      return null;
-    }
-
-    // ---- recorder ----
     async function startRecording() {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       chunks = [];
@@ -138,44 +160,29 @@
         const blob = new Blob(chunks, { type: mediaRecorder.mimeType || "audio/webm" });
         const filename = `recording-${Date.now()}.webm`;
 
-        recStatus.textContent = "Preparing…";
+        recStatus.textContent = "Uploading…";
 
-        // 1) Find file input (wait for widget to fully mount)
-        const fileInput = await waitForChatFileInput(10000);
-        if (!fileInput) {
-          recStatus.textContent = "Chat upload input not found (try once to click the paperclip/upload icon in chat, then record again)";
+        const form = new FormData();
+        form.append("action", "sendMessage");
+        form.append(CHAT_INPUT_KEY, "__AUDIO_RECORDING__");      // <-- matches your IF condition
+        form.append(CHAT_SESSION_KEY, getOrCreateSessionId());
+        form.append("file", blob, filename);
+
+        const res = await fetch(WEBHOOK_URL, { method: "POST", body: form });
+
+        if (!res.ok) {
+          recStatus.textContent = `Upload failed (${res.status})`;
           return;
         }
 
-        recStatus.textContent = "Uploading audio…";
-
-        // 2) Inject file into widget input
-        const file = new File([blob], filename, { type: blob.type });
-        const dt = new DataTransfer();
-        dt.items.add(file);
-        fileInput.files = dt.files;
-        fileInput.dispatchEvent(new Event("change", { bubbles: true }));
-
-        // 3) Wait a bit so the upload is attached to the session
-        await sleep(2000);
-
-        // 4) Send marker message so your IF (OR) routes to transcription
-        const textarea = await waitForChatTextarea(8000);
-        if (!textarea) {
-          recStatus.textContent = "Chat textarea not found";
-          return;
-        }
-
-        textarea.value = "__AUDIO_RECORDING__";
-        textarea.dispatchEvent(new Event("input", { bubbles: true }));
-        textarea.dispatchEvent(new KeyboardEvent("keydown", {
-          bubbles: true,
-          cancelable: true,
-          key: "Enter",
-          code: "Enter"
-        }));
-
+        const replyText = await readN8nReply(res);
         recStatus.textContent = "";
+
+        // Try to display inside chat; if DOM doesn't match, show it in the status bar
+        const rendered = appendAssistantToChat(replyText);
+        if (!rendered) {
+          recStatus.textContent = replyText;
+        }
       };
 
       mediaRecorder.start();
@@ -205,4 +212,5 @@
   </script>
 </body>
 </html>
+
 
