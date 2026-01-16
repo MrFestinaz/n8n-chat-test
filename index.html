@@ -8,7 +8,8 @@
     html, body { margin: 0; padding: 0; height: 100%; }
     #n8n-chat { height: 100%; }
 
-    #recorder-bar {
+    /* Small floating recorder bar */
+    #recorder-bar{
       position: fixed;
       bottom: 16px;
       left: 16px;
@@ -17,15 +18,18 @@
       gap: 8px;
       align-items: center;
     }
-    #recBtn {
+    #recBtn{
       padding: 10px 12px;
       border-radius: 10px;
       border: 1px solid #ccc;
       background: #fff;
       cursor: pointer;
+      font-family: system-ui, Segoe UI, Arial, sans-serif;
       font-size: 14px;
+      white-space: nowrap;
     }
-    #recStatus {
+    #recStatus{
+      font-family: system-ui, Segoe UI, Arial, sans-serif;
       font-size: 14px;
       background: rgba(255,255,255,0.9);
       padding: 6px 10px;
@@ -50,11 +54,12 @@
   <script type="module">
     import { createChat } from "https://cdn.jsdelivr.net/npm/@n8n/chat/dist/chat.bundle.es.js";
 
-    const WEBHOOK_URL =
-      "https://jakework.app.n8n.cloud/webhook/4091fa09-fb9a-4039-9411-7104d213f601/chat";
+    const WEBHOOK_URL = "https://jakework.app.n8n.cloud/webhook/4091fa09-fb9a-4039-9411-7104d213f601/chat";
 
+    // Init chat (explicit target helps some builds)
     createChat({
       webhookUrl: WEBHOOK_URL,
+      target: "#n8n-chat",
       mode: "fullscreen",
       allowFileUploads: true,
       allowedFilesMimeTypes: "audio/*",
@@ -62,66 +67,113 @@
       showWelcomeScreen: true,
       initialMessages: [
         "Hej!",
-        "Jeg er Ejner Hessel Lastbil Rapport-agenten. Du kan skrive eller optage."
-      ]
+        "Jeg er Ejner Hessel Lastbil Rapport-agenten. Skriv kundenavn og hvad du har lavet, eller optag via knappen så laver vi en rapport sammen!"
+      ],
+      i18n: {
+        en: {
+          title: "Ejner Hessel – Lastbil Rapport",
+          subtitle: "",
+          footer: "",
+          getStarted: "Ny samtale",
+          inputPlaceholder: "Skriv dit spørgsmål…"
+        }
+      }
     });
 
     const recBtn = document.getElementById("recBtn");
     const recStatus = document.getElementById("recStatus");
 
-    let mediaRecorder;
+    let mediaRecorder = null;
     let chunks = [];
 
+    // ---- helpers: wait until widget DOM exists ----
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+    async function waitForChatTextarea(timeoutMs = 8000) {
+      const start = Date.now();
+      while (Date.now() - start < timeoutMs) {
+        const ta = document.querySelector("textarea");
+        if (ta) return ta;
+        await sleep(100);
+      }
+      return null;
+    }
+
+    async function waitForChatFileInput(timeoutMs = 8000) {
+      const start = Date.now();
+      while (Date.now() - start < timeoutMs) {
+        // Some builds put the input inside #n8n-chat, others elsewhere.
+        const inputs = Array.from(document.querySelectorAll('input[type="file"]'));
+
+        // Prefer one that looks like the chat's uploader (accept includes audio, or accept is empty when allowed list is handled differently)
+        const best =
+          inputs.find(i => (i.accept || "").includes("audio")) ||
+          inputs.find(i => (i.accept || "").includes("*")) ||
+          inputs[0];
+
+        if (best) return best;
+        await sleep(100);
+      }
+      return null;
+    }
+
+    // ---- recorder ----
     async function startRecording() {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       chunks = [];
 
-      mediaRecorder = new MediaRecorder(stream);
-      mediaRecorder.ondataavailable = e => {
-        if (e.data.size > 0) chunks.push(e.data);
+      const options = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? { mimeType: "audio/webm;codecs=opus" }
+        : undefined;
+
+      mediaRecorder = new MediaRecorder(stream, options);
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) chunks.push(e.data);
       };
 
       mediaRecorder.onstop = async () => {
         stream.getTracks().forEach(t => t.stop());
 
-        const blob = new Blob(chunks, { type: "audio/webm" });
-        const file = new File([blob], `recording-${Date.now()}.webm`, {
-          type: "audio/webm"
-        });
+        const blob = new Blob(chunks, { type: mediaRecorder.mimeType || "audio/webm" });
+        const filename = `recording-${Date.now()}.webm`;
 
-        recStatus.textContent = "Uploading audio…";
+        recStatus.textContent = "Preparing…";
 
-        /* 1) Upload file THROUGH the widget */
-        const fileInput = document.querySelector("#n8n-chat input[type=file]");
+        // 1) Find file input (wait for widget to fully mount)
+        const fileInput = await waitForChatFileInput(10000);
         if (!fileInput) {
-          recStatus.textContent = "Chat upload input not found";
+          recStatus.textContent = "Chat upload input not found (try once to click the paperclip/upload icon in chat, then record again)";
           return;
         }
 
+        recStatus.textContent = "Uploading audio…";
+
+        // 2) Inject file into widget input
+        const file = new File([blob], filename, { type: blob.type });
         const dt = new DataTransfer();
         dt.items.add(file);
         fileInput.files = dt.files;
         fileInput.dispatchEvent(new Event("change", { bubbles: true }));
 
-        /* 2) Wait so upload attaches to session */
-        await new Promise(r => setTimeout(r, 1500));
+        // 3) Wait a bit so the upload is attached to the session
+        await sleep(2000);
 
-        /* 3) Send marker message */
-        const textarea = document.querySelector("#n8n-chat textarea");
+        // 4) Send marker message so your IF (OR) routes to transcription
+        const textarea = await waitForChatTextarea(8000);
         if (!textarea) {
-          recStatus.textContent = "Chat input not found";
+          recStatus.textContent = "Chat textarea not found";
           return;
         }
 
         textarea.value = "__AUDIO_RECORDING__";
         textarea.dispatchEvent(new Event("input", { bubbles: true }));
-        textarea.dispatchEvent(
-          new KeyboardEvent("keydown", {
-            key: "Enter",
-            code: "Enter",
-            bubbles: true
-          })
-        );
+        textarea.dispatchEvent(new KeyboardEvent("keydown", {
+          bubbles: true,
+          cancelable: true,
+          key: "Enter",
+          code: "Enter"
+        }));
 
         recStatus.textContent = "";
       };
@@ -132,17 +184,24 @@
     }
 
     function stopRecording() {
-      mediaRecorder.stop();
+      if (mediaRecorder && mediaRecorder.state !== "inactive") {
+        mediaRecorder.stop();
+      }
       recBtn.textContent = "Record";
     }
 
-    recBtn.onclick = async () => {
-      if (!mediaRecorder || mediaRecorder.state === "inactive") {
-        await startRecording();
-      } else {
-        stopRecording();
+    recBtn.addEventListener("click", async () => {
+      try {
+        if (!mediaRecorder || mediaRecorder.state === "inactive") {
+          await startRecording();
+        } else {
+          stopRecording();
+        }
+      } catch (err) {
+        recStatus.textContent = "Mic permission denied / not available";
+        console.error(err);
       }
-    };
+    });
   </script>
 </body>
 </html>
