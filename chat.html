@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>n8n Chat Test</title>
+  <link href="https://cdn.jsdelivr.net/npm/@n8n/chat/dist/style.css" rel="stylesheet" />
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+    }
+    #n8n-chat {
+      height: 100%;
+    }
+  </style>
+</head>
+<body>
+  <div id="n8n-chat"></div>
+
+  <script type="module">
+    import { createChat } from "https://cdn.jsdelivr.net/npm/@n8n/chat/dist/chat.bundle.es.js";
+
+    createChat({
+      webhookUrl: "https://jakework.app.n8n.cloud/webhook/4091fa09-fb9a-4039-9411-7104d213f601/chat",
+      mode: "fullscreen"
+    });
+  </script>
+</body>
+</html>
