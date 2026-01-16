@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>n8n Chat Test</title>
+  <title>Ejner Hessel – Lastbil Rapport</title>
   <link href="https://cdn.jsdelivr.net/npm/@n8n/chat/dist/style.css" rel="stylesheet" />
   <style>
     html, body {
@@ -15,6 +15,7 @@
     }
   </style>
 </head>
+
 <body>
   <div id="n8n-chat"></div>
 
@@ -28,10 +29,12 @@
       allowFileUploads: true,
       allowedFilesMimeTypes: "audio/*",
 
+      loadPreviousSession: true,
       showWelcomeScreen: true,
+
       initialMessages: [
         "Hej!",
-        "Jeg er Ejner Hessel Lastbil Rapport-agenten. Skriv din kundeklage eller tilføj en lydfil, så laver vi en rapport sammen!"
+        "Jeg er Ejner Hessel Lastbil Rapport-agenten. Skriv din kundeklage eller upload en lydfil, så laver vi en rapport sammen!"
       ],
 
       i18n: {
