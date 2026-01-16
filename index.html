@@ -17,7 +17,6 @@
       display: flex;
       gap: 8px;
       align-items: center;
-      max-width: calc(100vw - 32px);
     }
     #recBtn{
       padding: 10px 12px;
@@ -72,6 +71,23 @@
       const fresh = crypto.randomUUID();
       localStorage.setItem(SESSION_ID_STORAGE_KEY, fresh);
       return fresh;
+    }
+
+    // Send a message through the chat UI (so the response shows up as a normal chat reply)
+    // We do this by filling the textarea and simulating Enter.
+    function sendSpaceMessageThroughChat() {
+      const textarea = document.querySelector("textarea");
+      if (!textarea) return;
+
+      textarea.value = " ";
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+
+      textarea.dispatchEvent(new KeyboardEvent("keydown", {
+        bubbles: true,
+        cancelable: true,
+        key: "Enter",
+        code: "Enter"
+      }));
     }
 
     // ----- Chat widget -----
@@ -137,7 +153,7 @@
         const form = new FormData();
         form.append("action", "sendMessage");
 
-        // Send a minimal message so the workflow triggers (no need to type ".")
+        // Minimal message so your workflow triggers on this upload path
         form.append(CHAT_INPUT_KEY, ".");
 
         // IMPORTANT: Provide sessionId so Simple Memory doesn't crash
@@ -154,26 +170,10 @@
           return;
         }
 
-        // ---- NEW: show the workflow response right here ----
-        let out = "";
-        try {
-          const ct = res.headers.get("content-type") || "";
-          if (ct.includes("application/json")) {
-            const data = await res.json();
-            out =
-              data?.output ||
-              data?.text ||
-              data?.message ||
-              data?.data?.output ||
-              JSON.stringify(data);
-          } else {
-            out = await res.text();
-          }
-        } catch (e) {
-          out = "Uploaded (couldn't read response)";
-        }
-
-        recStatus.textContent = out || "Uploaded (empty response)";
+        // Now send a normal chat message so the response appears in the chat UI
+        // (this is the key change)
+        recStatus.textContent = "";
+        sendSpaceMessageThroughChat();
       };
 
       mediaRecorder.start();
