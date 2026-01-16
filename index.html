@@ -17,6 +17,7 @@
       display: flex;
       gap: 8px;
       align-items: center;
+      max-width: calc(100vw - 32px);
     }
     #recBtn{
       padding: 10px 12px;
@@ -26,6 +27,7 @@
       cursor: pointer;
       font-family: system-ui, Segoe UI, Arial, sans-serif;
       font-size: 14px;
+      white-space: nowrap;
     }
     #recStatus{
       font-family: system-ui, Segoe UI, Arial, sans-serif;
@@ -34,6 +36,10 @@
       padding: 6px 10px;
       border-radius: 10px;
       border: 1px solid #eee;
+      max-width: min(900px, calc(100vw - 160px));
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
   </style>
 </head>
@@ -148,7 +154,26 @@
           return;
         }
 
-        recStatus.textContent = "Uploaded (check chat response)";
+        // ---- NEW: show the workflow response right here ----
+        let out = "";
+        try {
+          const ct = res.headers.get("content-type") || "";
+          if (ct.includes("application/json")) {
+            const data = await res.json();
+            out =
+              data?.output ||
+              data?.text ||
+              data?.message ||
+              data?.data?.output ||
+              JSON.stringify(data);
+          } else {
+            out = await res.text();
+          }
+        } catch (e) {
+          out = "Uploaded (couldn't read response)";
+        }
+
+        recStatus.textContent = out || "Uploaded (empty response)";
       };
 
       mediaRecorder.start();
