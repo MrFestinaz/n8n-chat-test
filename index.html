@@ -73,23 +73,6 @@
       return fresh;
     }
 
-    // Send a message through the chat UI (so the response shows up as a normal chat reply)
-    // We do this by filling the textarea and simulating Enter.
-    function sendSpaceMessageThroughChat() {
-      const textarea = document.querySelector("textarea");
-      if (!textarea) return;
-
-      textarea.value = " ";
-      textarea.dispatchEvent(new Event("input", { bubbles: true }));
-
-      textarea.dispatchEvent(new KeyboardEvent("keydown", {
-        bubbles: true,
-        cancelable: true,
-        key: "Enter",
-        code: "Enter"
-      }));
-    }
-
     // ----- Chat widget -----
     createChat({
       webhookUrl: WEBHOOK_URL,
@@ -121,7 +104,7 @@
       }
     });
 
-    // ----- Audio recorder -> uploads to n8n webhook -----
+    // ----- Audio recorder -> injects into the chat widget upload input -----
     const recBtn = document.getElementById("recBtn");
     const recStatus = document.getElementById("recStatus");
 
@@ -143,37 +126,31 @@
       };
 
       mediaRecorder.onstop = async () => {
+        // Stop mic
         stream.getTracks().forEach(t => t.stop());
 
         const blob = new Blob(chunks, { type: mediaRecorder.mimeType || "audio/webm" });
         const filename = `recording-${Date.now()}.webm`;
 
-        recStatus.textContent = "Uploading…";
+        recStatus.textContent = "Sending…";
 
-        const form = new FormData();
-        form.append("action", "sendMessage");
-
-        // Minimal message so your workflow triggers on this upload path
-        form.append(CHAT_INPUT_KEY, ".");
-
-        // IMPORTANT: Provide sessionId so Simple Memory doesn't crash
-        form.append(CHAT_SESSION_KEY, getOrCreateSessionId());
-
-        // File field name: keep "file" since your normal upload worked.
-        // If you ever see another 500, switch this to "files".
-        form.append("file", blob, filename);
-
-        const res = await fetch(WEBHOOK_URL, { method: "POST", body: form });
-
-        if (!res.ok) {
-          recStatus.textContent = `Upload failed (${res.status})`;
+        // Find the widget's file input (created when allowFileUploads=true)
+        const fileInput = document.querySelector('#n8n-chat input[type="file"]');
+        if (!fileInput) {
+          recStatus.textContent = "Could not find chat upload input";
           return;
         }
 
-        // Now send a normal chat message so the response appears in the chat UI
-        // (this is the key change)
+        // Put the Blob into a File and “select” it
+        const file = new File([blob], filename, { type: blob.type });
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        fileInput.files = dt.files;
+
+        // Trigger the widget's upload handler
+        fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+
         recStatus.textContent = "";
-        sendSpaceMessageThroughChat();
       };
 
       mediaRecorder.start();
