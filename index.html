@@ -10,8 +10,27 @@
       padding: 0;
       height: 100%;
     }
+
     #n8n-chat {
       height: 100%;
+    }
+
+    #fake-wip {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      z-index: 9999;
+      padding: 10px 14px;
+      background: #0b5ed7;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    #fake-wip:hover {
+      background: #084298;
     }
   </style>
 </head>
@@ -19,10 +38,14 @@
 <body>
   <div id="n8n-chat"></div>
 
+  <button id="fake-wip">
+    🧪 Send fake WIP
+  </button>
+
   <script type="module">
     import { createChat } from "https://cdn.jsdelivr.net/npm/@n8n/chat/dist/chat.bundle.es.js";
 
-    createChat({
+    const chat = createChat({
       webhookUrl: "https://jakework.app.n8n.cloud/webhook/68304164-b0b8-4424-82f4-cdd95c1794ce/chat",
       mode: "fullscreen",
 
@@ -34,7 +57,7 @@
 
       initialMessages: [
         "Hej!",
-        "Hej, jeg hjælper dig videre med din mekaniker rapport bare skriv hvad du har gjort så laver vi en sammen!"
+        "Hej, jeg hjælper dig videre med din mekaniker rapport – bare skriv hvad du har gjort, så laver vi den sammen!"
       ],
 
       i18n: {
@@ -46,6 +69,22 @@
         }
       }
     });
+
+    // Fake WIP button logic
+    document.getElementById("fake-wip").addEventListener("click", () => {
+      const fakeMessage = `
+[WIP_CONTEXT]
+WIP: 999999
+Kundeklager:
+- Motorlampe lyser
+- Manglende trækkraft
+- AdBlue fejlmeddelelse
+[/WIP_CONTEXT]
+      `.trim();
+
+      chat.sendMessage?.(fakeMessage);
+    });
   </script>
 </body>
 </html>
+
