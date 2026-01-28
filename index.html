@@ -10,42 +10,39 @@
       padding: 0;
       height: 100%;
     }
-
     #n8n-chat {
       height: 100%;
     }
 
+    /* SUPER TOP LAYER BUTTON */
     #fake-wip {
       position: fixed;
-      bottom: 20px;
-      right: 20px;
-      z-index: 9999;
-      padding: 10px 14px;
+      top: 16px;
+      right: 16px;
+      z-index: 2147483647; /* max-ish */
+      padding: 10px 12px;
       background: #0b5ed7;
-      color: white;
+      color: #fff;
       border: none;
-      border-radius: 6px;
+      border-radius: 10px;
       cursor: pointer;
       font-size: 14px;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.25);
     }
-
-    #fake-wip:hover {
-      background: #084298;
+    #fake-wip:active {
+      transform: translateY(1px);
     }
   </style>
 </head>
 
 <body>
+  <button id="fake-wip">🧪 Fake WIP</button>
   <div id="n8n-chat"></div>
-
-  <button id="fake-wip">
-    🧪 Send fake WIP
-  </button>
 
   <script type="module">
     import { createChat } from "https://cdn.jsdelivr.net/npm/@n8n/chat/dist/chat.bundle.es.js";
 
-    const chat = createChat({
+    createChat({
       webhookUrl: "https://jakework.app.n8n.cloud/webhook/68304164-b0b8-4424-82f4-cdd95c1794ce/chat",
       mode: "fullscreen",
 
@@ -70,7 +67,28 @@
       }
     });
 
-    // Fake WIP button logic
+    // Fallback: send besked ved at fylde chat input + trykke send
+    function injectAndSend(message) {
+      // Find textarea inde i chatten
+      const textarea = document.querySelector("textarea");
+      if (!textarea) {
+        alert("Kunne ikke finde chat-input endnu. Prøv igen om 1-2 sek.");
+        return;
+      }
+
+      textarea.focus();
+      textarea.value = message;
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+
+      // Find send-knappen (kan variere lidt, så vi prøver nogle muligheder)
+      const sendBtn =
+        document.querySelector('button[type="submit"]') ||
+        Array.from(document.querySelectorAll("button")).find(b => /send|sende|submit/i.test(b.textContent || ""));
+
+      if (sendBtn) sendBtn.click();
+      else alert("Kunne ikke finde send-knappen. Skriv enter manuelt.");
+    }
+
     document.getElementById("fake-wip").addEventListener("click", () => {
       const fakeMessage = `
 [WIP_CONTEXT]
@@ -82,9 +100,8 @@ Kundeklager:
 [/WIP_CONTEXT]
       `.trim();
 
-      chat.sendMessage?.(fakeMessage);
+      injectAndSend(fakeMessage);
     });
   </script>
 </body>
 </html>
-
